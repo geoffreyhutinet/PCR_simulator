@@ -6,11 +6,9 @@
   <title>PCR Simulator</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- React & ReactDOM UMD (100% reliable on GitHub Pages) -->
+  <!-- React & ReactDOM UMD -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Babel Standalone for in-browser JSX compilation -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     @keyframes shake {
       0%, 100% { transform: translateX(0); }
@@ -35,12 +33,29 @@
   </style>
 </head>
 <body class="bg-slate-900 text-slate-200 m-0 p-0">
-  <div id="root"></div>
+  <div id="root">
+    <div style="display: flex; justify-content: center; align-items: center; height: 100vh; color: #94a3b8; font-family: sans-serif; flex-direction: column; gap: 10px;">
+      <div style="font-size: 20px; font-weight: bold;">Loading PCR Simulator...</div>
+      <div style="font-size: 14px; opacity: 0.7;">If this persists, check browser console for errors.</div>
+    </div>
+  </div>
+
+  <script>
+    // Global error boundary catcher to display errors on screen if script fails
+    window.onerror = function(msg, url, line) {
+      const root = document.getElementById('root');
+      if (root) {
+        root.innerHTML = '<div style="padding: 20px; color: #f87171; font-family: monospace;"><h3>Script Error:</h3><p>' + msg + '</p><p style="font-size: 12px; opacity: 0.8;">Line: ' + line + '</p></div>';
+      }
+    };
+  </script>
+
+  <!-- Include Babel Standalone for direct in-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    // --- Inline SVG Icons (Zero external icon library dependencies) ---
     const IconWrapper = ({ size = 20, className = "", children }) => (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -169,8 +184,6 @@
       </IconWrapper>
     );
 
-    // --- Biochemically Accurate Break Order ---
-    // A-T bonds (2 H-bonds) melt earlier (~60-78°C), G-C bonds (3 H-bonds) melt later (~78-93°C)
     const generateBreakOrder = (top) =>
       Array.from({ length: 16 }, (_, i) => {
         const base = top[i];
@@ -280,7 +293,6 @@
       );
     };
 
-    // --- Draggable Primer Component ---
     const DraggablePrimer = ({
       sequence,
       type,
@@ -366,20 +378,16 @@
 
     function App() {
       const [dna, setDna] = useState(() => generateDNA());
-
       const [cycle, setCycle] = useState(1);
       const [step, setStep] = useState(0);
       const [time, setTime] = useState(0);
       const [isActive, setIsActive] = useState(false);
-
       const [scores, setScores] = useState([]);
       const [playerName, setPlayerName] = useState("");
       const [scoreSubmitted, setScoreSubmitted] = useState(false);
-
       const [molecules, setMolecules] = useState([]);
       const [activeStrands, setActiveStrands] = useState([]);
       const [extensions, setExtensions] = useState({});
-
       const [temperature, setTemperature] = useState(25);
       const [p1Locked, setP1Locked] = useState(false);
       const [p2Locked, setP2Locked] = useState(false);
@@ -638,7 +646,6 @@
 
       return (
         <div className="min-h-screen bg-slate-900 text-slate-200 font-sans selection:bg-blue-500/30 flex flex-col">
-          {/* Header Bar */}
           <header className="bg-slate-800/95 backdrop-blur border-b border-slate-700 p-3 sm:p-4 flex items-center justify-between sticky top-0 z-40 shadow-md">
             <div className="flex-1 hidden sm:flex items-center gap-3">
               {step > 0 && (
@@ -690,7 +697,6 @@
           </header>
 
           <main className="flex-1 max-w-5xl w-full mx-auto p-2 sm:p-4 flex flex-col">
-            {/* STEP 0: Start Screen */}
             {step === 0 && (
               <div className="flex-1 flex flex-col items-center justify-center space-y-6 text-center py-6">
                 <div className="w-20 h-20 sm:w-24 sm:h-24 bg-blue-500/10 border border-blue-500/30 rounded-full flex items-center justify-center mb-1 shadow-[0_0_30px_rgba(59,130,246,0.2)]">
@@ -759,7 +765,6 @@
               </div>
             )}
 
-            {/* STEPS 1 - 4: Active Thermal Cycler Workspace */}
             {step > 0 && step < 5 && (
               <div className="space-y-3 sm:space-y-4 flex flex-col flex-1">
                 <div className="flex items-center gap-3 bg-slate-800 p-2.5 sm:p-3 rounded-xl shadow-inner w-full max-w-lg mx-auto border border-slate-700">
@@ -850,7 +855,6 @@
                   )}
                 </div>
 
-                {/* Reaction Tube Interactive Canvas */}
                 <div
                   className={`flex-1 min-h-[290px] relative bg-slate-950 p-2 sm:p-4 rounded-2xl border-2 overflow-y-auto overflow-x-hidden transition-colors ${
                     step === 1
@@ -1191,7 +1195,6 @@
                   </div>
                 </div>
 
-                {/* Bottom Control Dock */}
                 <div className="flex flex-col items-center px-1">
                   {step === 1 && (
                     <button
@@ -1328,7 +1331,6 @@
               </div>
             )}
 
-            {/* STEP 5: Final Amplicon Showcase & Leaderboard */}
             {step === 5 && (
               <div className="flex-1 flex flex-col items-center justify-center space-y-6 text-center py-6">
                 <h2 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
@@ -1463,10 +1465,7 @@
       );
     }
 
-    const rootElement = document.getElementById("root");
-    if (rootElement) {
-      ReactDOM.createRoot(rootElement).render(<App />);
-    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
 </html>
