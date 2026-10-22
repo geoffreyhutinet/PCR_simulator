@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PCR Simulator</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Babel Standalone for in-browser JSX/TSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Import Map for React 18 & Lucide Icons -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.3.1",
+        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react"
+      }
+    }
+  </script>
+  <style>
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-6px); }
+      75% { transform: translateX(6px); }
+    }
+    @keyframes pop-in {
+      0% { transform: scale(0.3) translateY(15px); opacity: 0; }
+      70% { transform: scale(1.1) translateY(-2px); opacity: 1; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    @keyframes pulse-fast {
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.15); opacity: 0.45; }
+    }
+    .animate-shake { animation: shake 0.2s ease-in-out 0s 2; }
+    .animate-pop-in { animation: pop-in 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    .animate-pulse-fast { animation: pulse-fast 1s ease-in-out infinite; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-200 m-0 p-0">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module" data-presets="react,typescript">
+    import React, { useState, useEffect, useRef, useCallback } from "react";
+    import { createRoot } from "react-dom/client";
+    import {
+      Thermometer,
+      Play,
+      RefreshCw,
+      CheckCircle,
+      Info,
+      Timer,
+      Droplets,
+      Trophy,
+      Flame,
+      Eye,
+      Keyboard,
+      Sparkles,
+      Dna,
+    } from "lucide-react";
+
+    // --- TypeScript Interfaces ---
+    interface DNASequence {
+      top: string[];
+      bot: string[];
+      p1: string[];
+      p2: string[];
+      p1Target: number;
+      p2Target: number;
+    }
+
+    interface Molecule {
+      id: string;
+      top: (string | null)[];
+      bot: (string | null)[];
+      breakOrder: number[];
+    }
+
+    interface ActiveStrand {
+      id: string;
+      type: "top" | "bot";
+      seq: (string | null)[];
+    }
+
+    interface Score {
+      name: string;
+      time: number;
+    }
+
+    // --- Biochemically Accurate Break Order ---
+    // A-T bonds (2 H-bonds) melt earlier (~60-78°C), G-C bonds (3 H-bonds) melt later (~78-93°C)
+    const generateBreakOrder = (top: (string | null)[]): number[] =>
+      Array.from({ length: 16 }, (_, i) => {
+        const base = top[i];
+        if (base === "G" || base === "C") {
+          return 78 + Math.random() * 15;
+        }
+        return 60 + Math.random() * 18;
+      });
+
+    const generateId = (): string => Math.random().toString(36).substring(2, 11);
+
+    const generateDNA = (): DNASequence => {
+      const BASES = ["A", "T", "G", "C"];
+      const compMap: Record<string, string> = { A: "T", T: "A", G: "C", C: "G" };
+      const getComp = (b: string) => compMap[b] || "A";
+
+      const top = Array.from(
+        { length: 16 },
+        () => BASES[Math.floor(Math.random() * 4)]
+      );
+      const bot = top.map(getComp);
+
+      const p1Target = Math.floor(Math.random() * 5);
+      const p2Target = 8 + Math.floor(Math.random() * 5);
+
+      const p1 = top.slice(p1Target, p1Target + 4);
+      const p2 = bot.slice(p2Target, p2Target + 4);
+
+      return { top, bot, p1, p2, p1Target, p2Target };
+    };
+
+    interface BaseProps {
+      char: string | null;
+      sizeClass?: string;
+      animate?: boolean;
+    }
+
+    const Base: React.FC<BaseProps> = ({
+      char,
+      sizeClass = "w-6 h-8 text-sm",
+      animate = false,
+    }) => {
+      const colors: Record<string, string> = {
+        A: "bg-red-500 text-white border-b-2 border-red-700",
+        T: "bg-blue-500 text-white border-b-2 border-blue-700",
+        G: "bg-emerald-600 text-white border-b-2 border-emerald-800",
+        C: "bg-amber-400 text-slate-900 border-b-2 border-amber-600",
+      };
+
+      const bgColor = char ? colors[char] || "bg-slate-300" : "bg-slate-300";
+
+      return (
+        <div
+          className={`flex items-center justify-center font-bold rounded-sm shadow-sm transition-all duration-300 select-none ${bgColor} ${
+            animate ? "animate-pop-in ring-2 ring-white z-30" : ""
+          } ${sizeClass} relative z-10`}
+        >
+          {char}
+        </div>
+      );
+    };
+
+    interface HBondsProps {
+      b1: string | null;
+      b2: string | null;
+      visible: boolean;
+      extraClass?: string;
+    }
+
+    const HBonds: React.FC<HBondsProps> = ({
+      b1,
+      b2,
+      visible,
+      extraClass = "",
+    }) => {
+      const isGC = (b1 === "G" && b2 === "C") || (b1 === "C" && b2 === "G");
+      const isAT = (b1 === "A" && b2 === "T") || (b1 === "T" && b2 === "A");
+
+      if (!b1 || !b2 || (!isGC && !isAT)) {
+        return <div className={`w-full h-full ${extraClass}`}></div>;
+      }
+
+      const lines = isGC ? 3 : 2;
+
+      return (
+        <div
+          className={`flex justify-center gap-[2px] sm:gap-[3.5px] h-full py-[1px] transition-all duration-[400ms] ${
+            visible ? "opacity-100 scale-100" : "opacity-0 scale-y-0"
+          } ${extraClass}`}
+        >
+          {Array.from({ length: lines }).map((_, i) => (
+            <div
+              key={i}
+              className={`w-[1.5px] sm:w-[2px] h-full rounded-full ${
+                isGC
+                  ? "bg-cyan-300/95 shadow-[0_0_5px_rgba(103,232,249,0.8)]"
+                  : "bg-sky-400/80 shadow-[0_0_3px_rgba(56,189,248,0.6)]"
+              }`}
+            ></div>
+          ))}
+        </div>
+      );
+    };
+
+    const TaqPolymerase: React.FC<{ requiredBase?: string | null }> = ({
+      requiredBase,
+    }) => {
+      const compMap: Record<string, string> = { A: "T", T: "A", G: "C", C: "G" };
+      const targetComplement = requiredBase ? compMap[requiredBase] : null;
+
+      return (
+        <div
+          title={
+            targetComplement
+              ? `Taq Polymerase waiting for complementary base (${targetComplement})`
+              : "Taq Polymerase"
+          }
+          className="absolute inset-[-4px] bg-amber-400/40 border-2 border-amber-300 rounded-full animate-pulse-fast z-20 shadow-[0_0_14px_rgba(251,191,36,0.75)] flex items-center justify-center pointer-events-none"
+        >
+          <div className="w-1.5 h-1.5 bg-amber-200 rounded-full"></div>
+        </div>
+      );
+    };
+
+    // --- Draggable Primer Component ---
+    interface DraggablePrimerProps {
+      sequence: string[];
+      type: "p1" | "p2";
+      locked: boolean;
+      onLock: () => void;
+      baseSize: string;
+    }
+
+    const DraggablePrimer: React.FC<DraggablePrimerProps> = ({
+      sequence,
+      type,
+      locked,
+      onLock,
+      baseSize,
+    }) => {
+      const [pos, setPos] = useState({ x: 0, y: 0 });
+      const [isDragging, setIsDragging] = useState(false);
+      const dragRef = useRef<HTMLDivElement>(null);
+      const startPos = useRef({ x: 0, y: 0 });
+
+      const handlePointerDown = (e: React.PointerEvent) => {
+        if (locked) return;
+        e.preventDefault();
+        (e.target as Element).setPointerCapture(e.pointerId);
+        setIsDragging(true);
+        startPos.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+      };
+
+      const handlePointerMove = (e: React.PointerEvent) => {
+        if (!isDragging || locked) return;
+        setPos({
+          x: e.clientX - startPos.current.x,
+          y: e.clientY - startPos.current.y,
+        });
+      };
+
+      const handlePointerUp = (e: React.PointerEvent) => {
+        if (!isDragging || locked) return;
+        setIsDragging(false);
+        (e.target as Element).releasePointerCapture(e.pointerId);
+
+        if (dragRef.current) {
+          dragRef.current.style.pointerEvents = "none";
+          const dropTarget = document.elementFromPoint(e.clientX, e.clientY);
+          dragRef.current.style.pointerEvents = "auto";
+
+          const targetZone = dropTarget?.closest(`[data-target="${type}"]`);
+          if (targetZone) {
+            onLock();
+            setPos({ x: 0, y: 0 });
+          } else {
+            setPos({ x: 0, y: 0 });
+          }
+        }
+      };
+
+      if (locked) return null;
+
+      return (
+        <div
+          ref={dragRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          className={`flex items-center gap-[1px] sm:gap-[2px] px-1.5 py-1 bg-slate-700/90 rounded-md border border-slate-500 shadow-xl cursor-grab active:cursor-grabbing select-none ${
+            isDragging
+              ? "z-50 shadow-[0_0_24px_rgba(59,130,246,0.75)] ring-2 ring-blue-400"
+              : "z-20 hover:border-blue-400/70"
+          }`}
+          style={{
+            transform: `translate(${pos.x}px, ${pos.y}px)`,
+            transition: isDragging
+              ? "none"
+              : "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+            touchAction: "none",
+          }}
+        >
+          <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 mr-0.5">
+            {type === "p1" ? "5'" : "3'"}
+          </span>
+          {sequence.map((b, i) => (
+            <Base key={i} char={b} sizeClass={baseSize} />
+          ))}
+          <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 ml-0.5">
+            {type === "p1" ? "3'" : "5'"}
+          </span>
+        </div>
+      );
+    };
+
+    function App() {
+      const [dna, setDna] = useState<DNASequence>(() => generateDNA());
+
+      const [cycle, setCycle] = useState<number>(1);
+      const [step, setStep] = useState<number>(0);
+      const [time, setTime] = useState<number>(0);
+      const [isActive, setIsActive] = useState<boolean>(false);
+
+      const [scores, setScores] = useState<Score[]>([]);
+      const [playerName, setPlayerName] = useState<string>("");
+      const [scoreSubmitted, setScoreSubmitted] = useState<boolean>(false);
+
+      const [molecules, setMolecules] = useState<Molecule[]>([]);
+      const [activeStrands, setActiveStrands] = useState<ActiveStrand[]>([]);
+      const [extensions, setExtensions] = useState<Record<string, string[]>>({});
+
+      const [temperature, setTemperature] = useState<number>(25);
+      const [p1Locked, setP1Locked] = useState<boolean>(false);
+      const [p2Locked, setP2Locked] = useState<boolean>(false);
+      const [showAnnealHint, setShowAnnealHint] = useState<boolean>(false);
+      const [errorFlash, setErrorFlash] = useState<boolean>(false);
+
+      const isAnnealed = p1Locked && p2Locked;
+
+      useEffect(() => {
+        try {
+          const savedScores = localStorage.getItem("pcr_leaderboard");
+          if (savedScores) {
+            setScores(JSON.parse(savedScores) as Score[]);
+          }
+        } catch (e) {
+          console.error("Could not load scores", e);
+        }
+      }, []);
+
+      const checkIsExtended = useCallback((): boolean => {
+        if (activeStrands.length === 0) return false;
+        return activeStrands.every((strand) => {
+          const ext = extensions[strand.id] || [];
+          if (strand.type === "bot") {
+            const nextIdx = dna.p1Target + 4 + ext.length;
+            return nextIdx >= 16 || strand.seq[nextIdx] === null;
+          } else {
+            const nextIdx = dna.p2Target - 1 - ext.length;
+            return nextIdx < 0 || strand.seq[nextIdx] === null;
+          }
+        });
+      }, [activeStrands, extensions, dna]);
+
+      const isExtended = checkIsExtended();
+
+      const advanceCycle = useCallback(() => {
+        const newMolecules: Molecule[] = [];
+
+        activeStrands.forEach((strand) => {
+          const ext = extensions[strand.id] || [];
+          if (strand.type === "bot") {
+            const newTop = Array<string | null>(16).fill(null);
+            for (let i = 0; i < 4; i++) newTop[dna.p1Target + i] = dna.p1[i];
+            ext.forEach((b, i) => (newTop[dna.p1Target + 4 + i] = b));
+            newMolecules.push({
+              id: generateId(),
+              top: newTop,
+              bot: strand.seq,
+              breakOrder: generateBreakOrder(newTop),
+            });
+          } else {
+            const newBot = Array<string | null>(16).fill(null);
+            for (let i = 0; i < 4; i++) newBot[dna.p2Target + i] = dna.p2[i];
+            ext.forEach((b, i) => (newBot[dna.p2Target - 1 - i] = b));
+            newMolecules.push({
+              id: generateId(),
+              top: strand.seq,
+              bot: newBot,
+              breakOrder: generateBreakOrder(strand.seq),
+            });
+          }
+        });
+
+        setMolecules(newMolecules);
+        setCycle((c) => c + 1);
+        setStep(1);
+        setTemperature(25);
+        setP1Locked(false);
+        setP2Locked(false);
+        setShowAnnealHint(false);
+      }, [activeStrands, extensions, dna]);
+
+      useEffect(() => {
+        let timer: ReturnType<typeof setTimeout>;
+        if (step === 2 && isAnnealed) {
+          timer = setTimeout(() => setStep(3), 600);
+        } else if (step === 3 && isExtended) {
+          timer = setTimeout(() => setStep(4), 800);
+        }
+        return () => clearTimeout(timer);
+      }, [step, isAnnealed, isExtended]);
+
+      useEffect(() => {
+        let timer: ReturnType<typeof setTimeout>;
+        if (step === 4) {
+          timer = setTimeout(() => {
+            if (cycle < 3) {
+              advanceCycle();
+            } else {
+              setStep(5);
+              setIsActive(false);
+            }
+          }, 1500);
+        }
+        return () => clearTimeout(timer);
+      }, [step, cycle, advanceCycle]);
+
+      useEffect(() => {
+        let interval: ReturnType<typeof setInterval> | undefined;
+        if (isActive && step > 0 && step < 5) {
+          interval = setInterval(() => setTime((t) => t + 1), 1000);
+        } else {
+          clearInterval(interval);
+        }
+        return () => clearInterval(interval);
+      }, [isActive, step]);
+
+      useEffect(() => {
+        if (step === 2) setTemperature(55);
+        if (step === 3) setTemperature(72);
+        if (step === 5) setScoreSubmitted(false);
+      }, [step]);
+
+      const handleHeatTap = useCallback(() => {
+        if (step === 1 && temperature < 95) {
+          const nextTemp = Math.min(temperature + 8, 95);
+          setTemperature(nextTemp);
+
+          if (nextTemp >= 95) {
+            setTimeout(() => {
+              const strands: ActiveStrand[] = [];
+              molecules.forEach((m) => {
+                strands.push({ id: m.id + "_top", type: "top", seq: m.top });
+                strands.push({ id: m.id + "_bot", type: "bot", seq: m.bot });
+              });
+              setActiveStrands(strands);
+              setExtensions({});
+              setStep(2);
+            }, 1100);
+          }
+        }
+      }, [step, temperature, molecules]);
+
+      const handleBaseType = useCallback(
+        (base: string) => {
+          if (step !== 3 || isExtended) return;
+
+          let added = false;
+          const newExts: Record<string, string[]> = { ...extensions };
+
+          activeStrands.forEach((strand) => {
+            const ext = newExts[strand.id] || [];
+
+            if (strand.type === "bot") {
+              const nextIdx = dna.p1Target + 4 + ext.length;
+              if (nextIdx < 16 && strand.seq[nextIdx] !== null) {
+                if (dna.top[nextIdx] === base) {
+                  newExts[strand.id] = [...ext, base];
+                  added = true;
+                }
+              }
+            } else {
+              const nextIdx = dna.p2Target - 1 - ext.length;
+              if (nextIdx >= 0 && strand.seq[nextIdx] !== null) {
+                if (dna.bot[nextIdx] === base) {
+                  newExts[strand.id] = [...ext, base];
+                  added = true;
+                }
+              }
+            }
+          });
+
+          if (added) {
+            setExtensions(newExts);
+          } else {
+            setErrorFlash(true);
+            setTimeout(() => setErrorFlash(false), 300);
+          }
+        },
+        [step, isExtended, extensions, activeStrands, dna]
+      );
+
+      useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+          if (
+            document.activeElement?.tagName === "INPUT" ||
+            document.activeElement?.tagName === "TEXTAREA"
+          ) {
+            return;
+          }
+
+          if (step === 1 && (e.code === "Space" || e.code === "Enter")) {
+            e.preventDefault();
+            handleHeatTap();
+          } else if (step === 3) {
+            const key = e.key.toUpperCase();
+            if (["A", "T", "C", "G"].includes(key)) {
+              e.preventDefault();
+              handleBaseType(key);
+            }
+          }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+      }, [step, handleHeatTap, handleBaseType]);
+
+      const startGame = () => {
+        const newDna = generateDNA();
+        setDna(newDna);
+        setMolecules([
+          {
+            id: generateId(),
+            top: newDna.top,
+            bot: newDna.bot,
+            breakOrder: generateBreakOrder(newDna.top),
+          },
+        ]);
+        setCycle(1);
+        setStep(1);
+        setTime(0);
+        setIsActive(true);
+        setTemperature(25);
+        setP1Locked(false);
+        setP2Locked(false);
+        setShowAnnealHint(false);
+        setExtensions({});
+        setPlayerName("");
+        setScoreSubmitted(false);
+      };
+
+      const handleScoreSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!playerName.trim()) return;
+
+        const newScores = [...scores, { name: playerName.toUpperCase(), time }];
+        newScores.sort((a, b) => a.time - b.time);
+        const top5 = newScores.slice(0, 5);
+
+        setScores(top5);
+        try {
+          localStorage.setItem("pcr_leaderboard", JSON.stringify(top5));
+        } catch (e) {
+          console.error("Could not save score", e);
+        }
+        setScoreSubmitted(true);
+      };
+
+      const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s.toString().padStart(2, "0")}`;
+      };
+
+      const qualifiesForLeaderboard =
+        scores.length < 5 || time < (scores[scores.length - 1]?.time || Infinity);
+
+      const baseSize =
+        cycle === 3
+          ? "w-[14px] h-[18px] text-[8px] sm:w-[18px] sm:h-[22px] sm:text-[10px]"
+          : cycle === 2
+          ? "w-4 h-5 text-[10px] sm:w-5 sm:h-6 sm:text-xs"
+          : "w-5 h-6 text-xs sm:w-6 sm:h-8 sm:text-sm";
+      const gapSize = cycle === 3 ? "gap-[1px]" : "gap-[2px] sm:gap-1";
+
+      return (
+        <div className="min-h-screen bg-slate-900 text-slate-200 font-sans selection:bg-blue-500/30 flex flex-col">
+          {/* Header Bar */}
+          <header className="bg-slate-800/95 backdrop-blur border-b border-slate-700 p-3 sm:p-4 flex items-center justify-between sticky top-0 z-40 shadow-md">
+            <div className="flex-1 hidden sm:flex items-center gap-3">
+              {step > 0 && (
+                <>
+                  <span className="px-2.5 py-1 rounded-full bg-slate-700/80 text-blue-300 font-bold text-xs tracking-widest uppercase border border-slate-600">
+                    Cycle {Math.min(cycle, 3)} / 3
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">
+                    {step === 1
+                      ? `${molecules.length} dsDNA`
+                      : `${activeStrands.length} ssDNA templates`}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="text-center flex-1 min-w-[160px]">
+              <h1 className="text-lg sm:text-xl font-black bg-gradient-to-r from-blue-400 via-cyan-300 to-emerald-400 bg-clip-text text-transparent flex items-center justify-center gap-2">
+                <Dna className="text-blue-400 w-5 h-5" />
+                PCR Simulator
+              </h1>
+              {step > 0 && (
+                <p className="text-[10px] text-slate-400 sm:hidden block mt-0.5">
+                  Cycle {Math.min(cycle, 3)}/3 •{" "}
+                  {step === 1
+                    ? `${molecules.length} dsDNA`
+                    : `${activeStrands.length} ssDNA`}
+                </p>
+              )}
+            </div>
+            <div className="flex-1 flex justify-end items-center gap-3">
+              {step > 0 && step < 5 && (
+                <button
+                  onClick={startGame}
+                  title="Restart Experiment"
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <RefreshCw size={16} />
+                </button>
+              )}
+              <div
+                className={`flex items-center gap-1.5 font-mono text-sm sm:text-lg font-bold px-2.5 py-1 rounded-lg bg-slate-900/70 border border-slate-700/80 ${
+                  isActive ? "text-emerald-400" : "text-slate-500"
+                }`}
+              >
+                <Timer size={16} />
+                {formatTime(time)}
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 max-w-5xl w-full mx-auto p-2 sm:p-4 flex flex-col">
+            {/* STEP 0: Start Screen */}
+            {step === 0 && (
+              <div className="flex-1 flex flex-col items-center justify-center space-y-6 text-center py-6">
+                <div className="w-20 h-20 sm:w-24 sm:h-24 bg-blue-500/10 border border-blue-500/30 rounded-full flex items-center justify-center mb-1 shadow-[0_0_30px_rgba(59,130,246,0.2)]">
+                  <Play className="text-blue-400 w-10 h-10 sm:w-12 sm:h-12 ml-1.5" />
+                </div>
+                <h2 className="text-2xl sm:text-4xl font-bold text-white px-4">
+                  Amplify the Target DNA
+                </h2>
+                <p className="text-slate-400 max-w-lg px-6 text-sm sm:text-base leading-relaxed">
+                  Run <strong>3 thermal cycles</strong> of Polymerase Chain Reaction
+                  (Denaturation, Annealing, and Extension) to exponentially isolate
+                  a specific target amplicon from a random 16-bp DNA template.
+                </p>
+
+                <div className="flex flex-wrap items-center justify-center gap-4 bg-slate-800/60 px-4 py-2.5 rounded-xl border border-slate-700/70 text-xs text-slate-300">
+                  <div className="flex items-center gap-1.5">
+                    <Base char="A" sizeClass="w-5 h-6 text-xs" />
+                    <span>↔</span>
+                    <Base char="T" sizeClass="w-5 h-6 text-xs" />
+                    <span className="text-slate-400 ml-1">(2 H-bonds)</span>
+                  </div>
+                  <div className="h-4 w-[1px] bg-slate-700 hidden sm:block" />
+                  <div className="flex items-center gap-1.5">
+                    <Base char="G" sizeClass="w-5 h-6 text-xs" />
+                    <span>↔</span>
+                    <Base char="C" sizeClass="w-5 h-6 text-xs" />
+                    <span className="text-slate-400 ml-1">(3 H-bonds)</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={startGame}
+                  className="mt-4 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold text-lg shadow-[0_0_24px_rgba(37,99,235,0.45)] transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2"
+                >
+                  <Flame size={20} /> Start Experiment
+                </button>
+
+                <div className="mt-8 w-full max-w-xs bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                  <div className="flex items-center justify-center gap-2 mb-3 text-slate-400">
+                    <Trophy size={16} className="text-yellow-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-yellow-300">
+                      Local Top Times
+                    </span>
+                  </div>
+
+                  {scores.length === 0 ? (
+                    <div className="text-sm text-slate-500 italic py-4">
+                      No scores saved yet. Complete 3 cycles to set a record!
+                    </div>
+                  ) : (
+                    scores.map((score, idx) => (
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center py-1.5 border-b border-slate-700/50 last:border-0 text-sm"
+                      >
+                        <span className="text-slate-300 font-mono">
+                          {idx + 1}. {score.name}
+                        </span>
+                        <span className="text-emerald-400 font-mono font-bold">
+                          {formatTime(score.time)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* STEPS 1 - 4: Active Thermal Cycler Workspace */}
+            {step > 0 && step < 5 && (
+              <div className="space-y-3 sm:space-y-4 flex flex-col flex-1">
+                <div className="flex items-center gap-3 bg-slate-800 p-2.5 sm:p-3 rounded-xl shadow-inner w-full max-w-lg mx-auto border border-slate-700">
+                  <Thermometer
+                    className={`${
+                      temperature >= 95
+                        ? "text-red-500 animate-pulse"
+                        : temperature >= 70
+                        ? "text-orange-500"
+                        : temperature >= 50
+                        ? "text-amber-400"
+                        : "text-blue-400"
+                    }`}
+                    size={24}
+                  />
+                  <div className="flex-1">
+                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                      <span>Thermal Block</span>
+                      <span>
+                        {step === 1
+                          ? "Target: 95°C (Denature)"
+                          : step === 2
+                          ? "Target: 55°C (Anneal)"
+                          : "Target: 72°C (Taq Extend)"}
+                      </span>
+                    </div>
+                    <div className="h-3 bg-slate-900 rounded-full overflow-hidden relative border border-slate-700/60">
+                      <div
+                        className={`h-full transition-all duration-[350ms] ${
+                          temperature >= 95
+                            ? "bg-gradient-to-r from-orange-500 to-red-500"
+                            : temperature >= 70
+                            ? "bg-orange-500"
+                            : "bg-blue-400"
+                        }`}
+                        style={{ width: `${(temperature / 95) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-base sm:text-xl w-14 sm:w-16 text-right text-slate-100">
+                    {temperature}°C
+                  </span>
+                </div>
+
+                <div className="bg-slate-800/90 p-3 sm:p-4 rounded-xl border border-slate-700 shadow-sm mx-1 flex items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <Info className="text-blue-400 shrink-0 mt-0.5 w-5 h-5 sm:w-6 sm:h-6" />
+                    <div>
+                      <h3 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+                        <span>
+                          Step {step}:{" "}
+                          {step === 1
+                            ? "Denaturation (95°C)"
+                            : step === 2
+                            ? "Primer Annealing (55°C)"
+                            : step === 3
+                            ? "Primer Extension (72°C)"
+                            : "Cycle Complete"}
+                        </span>
+                      </h3>
+                      <p className="text-slate-300 text-[11px] sm:text-sm mt-0.5 leading-snug">
+                        {step === 1 &&
+                          "Tap the reaction tube (or press Space) to heat the sample to 95°C. Notice A-T pairs (2 bonds) melt before G-C pairs (3 bonds)!"}
+                        {step === 2 &&
+                          "Drag the Forward (P1) and Reverse (P2) primers from the dock to their complementary 3' template sites."}
+                        {step === 3 &&
+                          "Taq Polymerase is active at 72°C! Click or press A, T, C, G on your keyboard to synthesize new DNA in the 5' → 3' direction."}
+                        {step === 4 &&
+                          "All templates extended! Doubling DNA molecules for the next thermal cycle..."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {step === 2 && !isAnnealed && (
+                    <button
+                      onClick={() => setShowAnnealHint((h) => !h)}
+                      className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                        showAnnealHint
+                          ? "bg-amber-500/20 border-amber-400 text-amber-300"
+                          : "bg-slate-700/70 border-slate-600 text-slate-300 hover:bg-slate-700"
+                      }`}
+                    >
+                      <Eye size={14} />
+                      <span className="hidden sm:inline">
+                        {showAnnealHint ? "Hide Target Hint" : "Show Hint"}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Reaction Tube Interactive Canvas */}
+                <div
+                  className={`flex-1 min-h-[290px] relative bg-slate-950 p-2 sm:p-4 rounded-2xl border-2 overflow-y-auto overflow-x-hidden transition-colors ${
+                    step === 1
+                      ? "cursor-pointer border-blue-500/40 hover:border-blue-400 active:bg-slate-900/90"
+                      : "border-slate-800"
+                  } mx-1 custom-scrollbar`}
+                  onClick={step === 1 ? handleHeatTap : undefined}
+                >
+                  {step === 1 && temperature < 95 && (
+                    <div className="absolute inset-0 flex items-center justify-center opacity-[0.06] pointer-events-none z-0">
+                      <p className="text-4xl sm:text-6xl font-black text-center px-4 select-none">
+                        TAP OR SPACE TO HEAT
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col items-center w-full pb-4 pt-2">
+                    {step === 1 &&
+                      molecules.map((mol) => (
+                        <div
+                          key={mol.id}
+                          className="flex flex-col items-center mb-6 last:mb-0 w-full"
+                        >
+                          <div
+                            className={`flex ${gapSize} items-center justify-center w-full relative`}
+                          >
+                            <div className="flex flex-col justify-between h-full py-1 pr-1.5 text-[9px] sm:text-[11px] font-mono font-bold text-slate-500 select-none">
+                              <span
+                                className="transition-transform duration-[800ms]"
+                                style={{
+                                  transform:
+                                    temperature >= 95
+                                      ? "translateY(-15px)"
+                                      : "none",
+                                }}
+                              >
+                                5'
+                              </span>
+                              <span
+                                className="transition-transform duration-[800ms] mt-3"
+                                style={{
+                                  transform:
+                                    temperature >= 95 ? "translateY(15px)" : "none",
+                                }}
+                              >
+                                3'
+                              </span>
+                            </div>
+
+                            {Array.from({ length: 16 }).map((_, i) => (
+                              <div
+                                key={i}
+                                className="flex flex-col items-center relative"
+                              >
+                                <div
+                                  className="transition-transform duration-[800ms] z-10"
+                                  style={{
+                                    transform:
+                                      temperature >= 95
+                                        ? `translateY(-15px)`
+                                        : "none",
+                                  }}
+                                >
+                                  {mol.top[i] ? (
+                                    <Base
+                                      char={mol.top[i] || null}
+                                      sizeClass={baseSize}
+                                    />
+                                  ) : (
+                                    <div className={baseSize} />
+                                  )}
+                                </div>
+
+                                <div className="h-[12px] sm:h-[16px] flex items-center justify-center pointer-events-none z-0 my-[1px]">
+                                  <HBonds
+                                    b1={mol.top[i] || null}
+                                    b2={mol.bot[i] || null}
+                                    visible={temperature < mol.breakOrder[i]}
+                                  />
+                                </div>
+
+                                <div
+                                  className="transition-transform duration-[800ms] z-10"
+                                  style={{
+                                    transform:
+                                      temperature >= 95
+                                        ? `translateY(15px)`
+                                        : "none",
+                                  }}
+                                >
+                                  {mol.bot[i] ? (
+                                    <Base
+                                      char={mol.bot[i] || null}
+                                      sizeClass={baseSize}
+                                    />
+                                  ) : (
+                                    <div className={baseSize} />
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+
+                            <div className="flex flex-col justify-between h-full py-1 pl-1.5 text-[9px] sm:text-[11px] font-mono font-bold text-slate-500 select-none">
+                              <span
+                                className="transition-transform duration-[800ms]"
+                                style={{
+                                  transform:
+                                    temperature >= 95
+                                      ? "translateY(-15px)"
+                                      : "none",
+                                }}
+                              >
+                                3'
+                              </span>
+                              <span
+                                className="transition-transform duration-[800ms] mt-3"
+                                style={{
+                                  transform:
+                                    temperature >= 95 ? "translateY(15px)" : "none",
+                                }}
+                              >
+                                5'
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                    {step >= 2 &&
+                      step <= 4 &&
+                      activeStrands.map((strand) => {
+                        const ext = extensions[strand.id] || [];
+                        const isTopTemp = strand.type === "top";
+
+                        return (
+                          <div
+                            key={strand.id}
+                            className={`flex ${gapSize} items-center justify-center w-full mb-3 sm:mb-4 relative p-1.5 sm:p-2.5 bg-slate-900/60 rounded-xl border border-slate-800/80`}
+                          >
+                            <div className="flex flex-col justify-between h-full pr-1.5 text-[9px] sm:text-[10px] font-mono font-bold text-slate-500 select-none">
+                              <span>5'</span>
+                              <span className="mt-3">3'</span>
+                            </div>
+
+                            {Array.from({ length: 16 }).map((_, i) => {
+                              const tBase = strand.seq[i];
+                              let pBase: string | null = null;
+                              let isExtBase = false;
+                              let isTaqTarget = false;
+
+                              if (isTopTemp) {
+                                if (
+                                  p2Locked &&
+                                  i >= dna.p2Target &&
+                                  i < dna.p2Target + 4
+                                ) {
+                                  pBase = dna.p2[i - dna.p2Target];
+                                }
+                                if (
+                                  p2Locked &&
+                                  i < dna.p2Target &&
+                                  i >= dna.p2Target - ext.length
+                                ) {
+                                  pBase = ext[dna.p2Target - 1 - i] || null;
+                                  isExtBase = i === dna.p2Target - ext.length;
+                                }
+                                if (
+                                  step === 3 &&
+                                  p2Locked &&
+                                  i === dna.p2Target - 1 - ext.length &&
+                                  tBase !== null
+                                ) {
+                                  isTaqTarget = true;
+                                }
+                              } else {
+                                if (
+                                  p1Locked &&
+                                  i >= dna.p1Target &&
+                                  i < dna.p1Target + 4
+                                ) {
+                                  pBase = dna.p1[i - dna.p1Target];
+                                }
+                                if (
+                                  p1Locked &&
+                                  i > dna.p1Target + 3 &&
+                                  i < dna.p1Target + 4 + ext.length
+                                ) {
+                                  pBase = ext[i - dna.p1Target - 4] || null;
+                                  isExtBase = i === dna.p1Target + 3 + ext.length;
+                                }
+                                if (
+                                  step === 3 &&
+                                  p1Locked &&
+                                  i === dna.p1Target + 4 + ext.length &&
+                                  tBase !== null
+                                ) {
+                                  isTaqTarget = true;
+                                }
+                              }
+
+                              const isP2HintZone =
+                                step === 2 &&
+                                !p2Locked &&
+                                isTopTemp &&
+                                tBase !== null &&
+                                i >= dna.p2Target &&
+                                i < dna.p2Target + 4;
+
+                              const isP1HintZone =
+                                step === 2 &&
+                                !p1Locked &&
+                                !isTopTemp &&
+                                tBase !== null &&
+                                i >= dna.p1Target &&
+                                i < dna.p1Target + 4;
+
+                              return (
+                                <div
+                                  key={i}
+                                  className="flex flex-col items-center relative"
+                                >
+                                  {isTopTemp ? (
+                                    <>
+                                      {tBase ? (
+                                        <Base
+                                          char={tBase || null}
+                                          sizeClass={baseSize}
+                                        />
+                                      ) : (
+                                        <div className={baseSize} />
+                                      )}
+                                      <div className="h-[10px] sm:h-[14px] flex items-center justify-center w-full">
+                                        <HBonds
+                                          b1={tBase || null}
+                                          b2={pBase || null}
+                                          visible={true}
+                                        />
+                                      </div>
+                                      <div className="relative">
+                                        {isTaqTarget && !isExtended && (
+                                          <TaqPolymerase requiredBase={tBase} />
+                                        )}
+                                        {pBase ? (
+                                          <Base
+                                            char={pBase || null}
+                                            sizeClass={baseSize}
+                                            animate={isExtBase}
+                                          />
+                                        ) : (
+                                          <div
+                                            className={`${baseSize} rounded-sm transition-colors ${
+                                              showAnnealHint && isP2HintZone
+                                                ? "border border-dashed border-amber-400/80 bg-amber-400/10"
+                                                : ""
+                                            }`}
+                                          />
+                                        )}
+
+                                        {step === 2 &&
+                                          !p2Locked &&
+                                          i === dna.p2Target && (
+                                            <div
+                                              data-target="p2"
+                                              onClick={() => {
+                                                if (showAnnealHint)
+                                                  setP2Locked(true);
+                                              }}
+                                              className="absolute top-1/2 -translate-y-1/2 left-0 h-[220%] z-30 pointer-events-auto"
+                                              style={{ width: "calc(400% + 12px)" }}
+                                            />
+                                          )}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="relative">
+                                        {isTaqTarget && !isExtended && (
+                                          <TaqPolymerase requiredBase={tBase} />
+                                        )}
+                                        {pBase ? (
+                                          <Base
+                                            char={pBase || null}
+                                            sizeClass={baseSize}
+                                            animate={isExtBase}
+                                          />
+                                        ) : (
+                                          <div
+                                            className={`${baseSize} rounded-sm transition-colors ${
+                                              showAnnealHint && isP1HintZone
+                                                ? "border border-dashed border-amber-400/80 bg-amber-400/10"
+                                                : ""
+                                            }`}
+                                          />
+                                        )}
+
+                                        {step === 2 &&
+                                          !p1Locked &&
+                                          i === dna.p1Target && (
+                                            <div
+                                              data-target="p1"
+                                              onClick={() => {
+                                                if (showAnnealHint)
+                                                  setP1Locked(true);
+                                              }}
+                                              className="absolute top-1/2 -translate-y-1/2 left-0 h-[220%] z-30 pointer-events-auto"
+                                              style={{ width: "calc(400% + 12px)" }}
+                                            />
+                                          )}
+                                      </div>
+                                      <div className="h-[10px] sm:h-[14px] flex items-center justify-center w-full">
+                                        <HBonds
+                                          b1={pBase || null}
+                                          b2={tBase || null}
+                                          visible={true}
+                                        />
+                                      </div>
+                                      {tBase ? (
+                                        <Base
+                                          char={tBase || null}
+                                          sizeClass={baseSize}
+                                        />
+                                      ) : (
+                                        <div className={baseSize} />
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            <div className="flex flex-col justify-between h-full pl-1.5 text-[9px] sm:text-[10px] font-mono font-bold text-slate-500 select-none">
+                              <span>3'</span>
+                              <span className="mt-3">5'</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Bottom Control Dock */}
+                <div className="flex flex-col items-center px-1">
+                  {step === 1 && (
+                    <button
+                      onClick={handleHeatTap}
+                      disabled={temperature >= 95}
+                      className="px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg flex items-center gap-2 transition-transform active:scale-95"
+                    >
+                      <Flame size={18} />
+                      {temperature >= 95
+                        ? "Strands Denatured (95°C)!"
+                        : "Pulse Heat (+8°C) [Space]"}
+                    </button>
+                  )}
+
+                  {step === 2 && (
+                    <div className="flex flex-col w-full items-center max-w-md mx-auto">
+                      <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                        Primer Dock (Drag onto complementary template sites)
+                      </span>
+                      <div className="flex justify-around items-center h-[76px] bg-slate-800/80 p-2 rounded-2xl border border-slate-700 shadow-inner w-full relative">
+                        <div className="flex flex-col items-center w-36 relative">
+                          <span className="text-[10px] text-slate-400 font-bold mb-1">
+                            Forward Primer (P1)
+                          </span>
+                          <DraggablePrimer
+                            sequence={dna.p1}
+                            type="p1"
+                            locked={p1Locked}
+                            onLock={() => setP1Locked(true)}
+                            baseSize={baseSize}
+                          />
+                          {p1Locked && (
+                            <div className="flex items-center gap-1 text-emerald-400 text-xs font-bold mt-1">
+                              <CheckCircle size={16} /> Annealed
+                            </div>
+                          )}
+                        </div>
+                        <div className="h-10 w-[1px] bg-slate-700" />
+                        <div className="flex flex-col items-center w-36 relative">
+                          <span className="text-[10px] text-slate-400 font-bold mb-1">
+                            Reverse Primer (P2)
+                          </span>
+                          <DraggablePrimer
+                            sequence={dna.p2}
+                            type="p2"
+                            locked={p2Locked}
+                            onLock={() => setP2Locked(true)}
+                            baseSize={baseSize}
+                          />
+                          {p2Locked && (
+                            <div className="flex items-center gap-1 text-emerald-400 text-xs font-bold mt-1">
+                              <CheckCircle size={16} /> Annealed
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {step === 3 && (
+                    <div className="w-full max-w-sm bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-slate-700 shadow-xl relative overflow-hidden h-[126px] flex flex-col justify-center">
+                      <div className="absolute inset-0 bg-blue-500/5 pointer-events-none"></div>
+
+                      {isExtended ? (
+                        <div className="flex flex-col items-center justify-center h-full">
+                          <CheckCircle className="text-emerald-500 mb-2 w-10 h-10" />
+                          <span className="font-bold text-emerald-400">
+                            5' → 3' Extension Complete!
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between mb-2.5 text-slate-400 px-1">
+                            <div className="flex items-center gap-1.5">
+                              <Droplets size={15} className="text-blue-400" />
+                              <span className="text-xs font-bold uppercase tracking-wider">
+                                Free dNTP Pool
+                              </span>
+                            </div>
+                            <span className="text-[10px] flex items-center gap-1 text-slate-500 font-mono">
+                              <Keyboard size={12} /> Keys A, T, C, G
+                            </span>
+                          </div>
+                          <div
+                            className={`grid grid-cols-4 gap-2 sm:gap-3 transition-transform ${
+                              errorFlash ? "animate-shake" : ""
+                            }`}
+                          >
+                            {["A", "T", "C", "G"].map((base) => (
+                              <button
+                                key={base}
+                                onClick={() => handleBaseType(base)}
+                                className="h-12 sm:h-14 text-xl sm:text-2xl font-black rounded-xl shadow-[0_4px_0_rgba(0,0,0,0.3)] transform transition-all active:translate-y-1 active:shadow-none hover:brightness-110 flex items-center justify-center bg-slate-700 border border-slate-600 relative overflow-hidden group"
+                              >
+                                <Base
+                                  char={base}
+                                  sizeClass="w-full h-full rounded-lg shadow-none"
+                                />
+                                <div className="absolute inset-0 bg-white/0 group-active:bg-white/20 transition-colors"></div>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {step === 4 && (
+                    <div className="flex flex-col items-center text-center h-[100px] justify-center">
+                      <h3 className="text-lg sm:text-xl font-bold text-white mb-1">
+                        Cycle {cycle} Complete!
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-400 px-4">
+                        The reaction tube now contains{" "}
+                        <strong className="text-emerald-400">
+                          {activeStrands.length} double-stranded DNA molecules
+                        </strong>{" "}
+                        (2<sup>{cycle}</sup> amplification).
+                      </p>
+
+                      {cycle < 3 ? (
+                        <div className="flex items-center gap-2 text-blue-400 mt-3 text-sm font-bold animate-pulse">
+                          <RefreshCw className="animate-spin" size={18} /> Starting
+                          Cycle {cycle + 1}...
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-emerald-400 mt-3 text-sm font-bold animate-pulse">
+                          <Sparkles size={18} /> Isolating Target Amplicon...
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* STEP 5: Final Amplicon Showcase & Leaderboard */}
+            {step === 5 && (
+              <div className="flex-1 flex flex-col items-center justify-center space-y-6 text-center py-6">
+                <h2 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
+                  <CheckCircle className="text-emerald-400 w-8 h-8" /> Target
+                  Amplicon Isolated!
+                </h2>
+                <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+                  <span className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                    Completion Time:{" "}
+                    <strong className="text-emerald-400 font-mono text-base">
+                      {formatTime(time)}
+                    </strong>
+                  </span>
+                  <span className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                    Amplicon Length:{" "}
+                    <strong className="text-blue-400 font-mono text-base">
+                      {dna.p2Target + 4 - dna.p1Target} bp
+                    </strong>
+                  </span>
+                  <span className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                    Total Yield:{" "}
+                    <strong className="text-amber-300 font-mono text-base">
+                      8 dsDNA copies (2 pure target-length)
+                    </strong>
+                  </span>
+                </div>
+
+                <div className="w-full max-w-lg bg-slate-800 p-4 sm:p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
+                  <h3 className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase mb-4 tracking-wider text-center">
+                    Isolated Target Amplicon ({dna.p2Target + 4 - dna.p1Target} Base
+                    Pairs)
+                  </h3>
+                  <div className="flex items-center justify-center gap-1 sm:gap-2 min-w-max mx-auto py-2">
+                    <div className="flex flex-col justify-between h-16 pr-1 text-[10px] font-mono font-bold text-slate-500">
+                      <span>5'</span>
+                      <span>3'</span>
+                    </div>
+                    {Array.from({ length: dna.p2Target + 4 - dna.p1Target }).map(
+                      (_, i) => {
+                        const topBase = dna.top[i + dna.p1Target];
+                        const botBase = dna.bot[i + dna.p1Target];
+                        return (
+                          <div key={i} className="flex flex-col items-center">
+                            <Base
+                              char={topBase}
+                              sizeClass="w-5 h-7 sm:w-8 sm:h-10 text-xs sm:text-base"
+                            />
+                            <div className="h-[10px] sm:h-[14px] flex items-center w-full">
+                              <HBonds b1={topBase} b2={botBase} visible={true} />
+                            </div>
+                            <Base
+                              char={botBase}
+                              sizeClass="w-5 h-7 sm:w-8 sm:h-10 text-xs sm:text-base"
+                            />
+                          </div>
+                        );
+                      }
+                    )}
+                    <div className="flex flex-col justify-between h-16 pl-1 text-[10px] font-mono font-bold text-slate-500">
+                      <span>3'</span>
+                      <span>5'</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full max-w-md bg-slate-800/80 p-5 rounded-2xl border border-slate-700 mt-2">
+                  <div className="flex items-center justify-center gap-2 mb-4 text-slate-300">
+                    <Trophy className="text-yellow-400" size={20} />
+                    <h3 className="font-bold text-lg text-yellow-300">
+                      Local Leaderboard
+                    </h3>
+                  </div>
+
+                  {qualifiesForLeaderboard && !scoreSubmitted ? (
+                    <form onSubmit={handleScoreSubmit} className="flex gap-2 mb-6">
+                      <input
+                        type="text"
+                        maxLength={3}
+                        value={playerName}
+                        onChange={(e) =>
+                          setPlayerName(e.target.value.toUpperCase())
+                        }
+                        placeholder="AAA"
+                        className="bg-slate-900 border border-slate-600 text-white px-4 py-2 rounded-lg w-24 text-center font-bold uppercase focus:outline-none focus:border-blue-500"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        className="flex-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold transition-colors"
+                      >
+                        Save Score
+                      </button>
+                    </form>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    {scores.length === 0 && (
+                      <div className="text-slate-500 italic">
+                        No scores saved yet.
+                      </div>
+                    )}
+                    {scores.map((score, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex justify-between items-center p-2 rounded ${
+                          score.time === time && scoreSubmitted
+                            ? "bg-blue-600/20 border border-blue-500/50"
+                            : "bg-slate-900/50"
+                        }`}
+                      >
+                        <span className="text-slate-300 font-mono font-bold">
+                          {idx + 1}. {score.name}
+                        </span>
+                        <span className="text-emerald-400 font-mono font-bold">
+                          {formatTime(score.time)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={startGame}
+                  className="mt-2 flex items-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold text-sm sm:text-lg shadow-lg transition-all active:scale-95"
+                >
+                  <RefreshCw size={20} /> Play Again
+                </button>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    const rootElement = document.getElementById("root");
+    if (rootElement) {
+      createRoot(rootElement).render(<App />);
+    }
+  </script>
+</body>
+</html>
