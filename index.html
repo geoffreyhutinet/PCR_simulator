@@ -6,18 +6,11 @@
   <title>PCR Simulator</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Babel Standalone for in-browser JSX/TSX compilation -->
+  <!-- React & ReactDOM UMD (100% reliable on GitHub Pages) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel Standalone for in-browser JSX compilation -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Import Map for React 18 & Lucide Icons -->
-  <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.3.1",
-        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-        "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react"
-      }
-    }
-  </script>
   <style>
     @keyframes shake {
       0%, 100% { transform: translateX(0); }
@@ -44,56 +37,141 @@
 <body class="bg-slate-900 text-slate-200 m-0 p-0">
   <div id="root"></div>
 
-  <script type="text/babel" data-type="module" data-presets="react,typescript">
-    import React, { useState, useEffect, useRef, useCallback } from "react";
-    import { createRoot } from "react-dom/client";
-    import {
-      Thermometer,
-      Play,
-      RefreshCw,
-      CheckCircle,
-      Info,
-      Timer,
-      Droplets,
-      Trophy,
-      Flame,
-      Eye,
-      Keyboard,
-      Sparkles,
-      Dna,
-    } from "lucide-react";
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
 
-    // --- TypeScript Interfaces ---
-    interface DNASequence {
-      top: string[];
-      bot: string[];
-      p1: string[];
-      p2: string[];
-      p1Target: number;
-      p2Target: number;
-    }
+    // --- Inline SVG Icons (Zero external icon library dependencies) ---
+    const IconWrapper = ({ size = 20, className = "", children }) => (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+      >
+        {children}
+      </svg>
+    );
 
-    interface Molecule {
-      id: string;
-      top: (string | null)[];
-      bot: (string | null)[];
-      breakOrder: number[];
-    }
+    const Thermometer = (props) => (
+      <IconWrapper {...props}>
+        <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+      </IconWrapper>
+    );
 
-    interface ActiveStrand {
-      id: string;
-      type: "top" | "bot";
-      seq: (string | null)[];
-    }
+    const Play = (props) => (
+      <IconWrapper {...props}>
+        <polygon points="6 3 20 12 6 21 6 3" />
+      </IconWrapper>
+    );
 
-    interface Score {
-      name: string;
-      time: number;
-    }
+    const RefreshCw = (props) => (
+      <IconWrapper {...props}>
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+        <path d="M21 3v5h-5" />
+        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+        <path d="M8 16H3v5" />
+      </IconWrapper>
+    );
+
+    const CheckCircle = (props) => (
+      <IconWrapper {...props}>
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+        <path d="m9 11 3 3L22 4" />
+      </IconWrapper>
+    );
+
+    const Info = (props) => (
+      <IconWrapper {...props}>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 16v-4" />
+        <path d="M12 8h.01" />
+      </IconWrapper>
+    );
+
+    const Timer = (props) => (
+      <IconWrapper {...props}>
+        <line x1="10" x2="14" y1="2" y2="2" />
+        <line x1="12" x2="15" y1="14" y2="11" />
+        <circle cx="12" cy="14" r="8" />
+      </IconWrapper>
+    );
+
+    const Droplets = (props) => (
+      <IconWrapper {...props}>
+        <path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z" />
+        <path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97" />
+      </IconWrapper>
+    );
+
+    const Trophy = (props) => (
+      <IconWrapper {...props}>
+        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+        <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+        <path d="M4 22h16" />
+        <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+        <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+        <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+      </IconWrapper>
+    );
+
+    const Flame = (props) => (
+      <IconWrapper {...props}>
+        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+      </IconWrapper>
+    );
+
+    const Eye = (props) => (
+      <IconWrapper {...props}>
+        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+        <circle cx="12" cy="12" r="3" />
+      </IconWrapper>
+    );
+
+    const Keyboard = (props) => (
+      <IconWrapper {...props}>
+        <rect width="20" height="16" x="2" y="4" rx="2" ry="2" />
+        <path d="M6 8h.001" />
+        <path d="M10 8h.001" />
+        <path d="M14 8h.001" />
+        <path d="M18 8h.001" />
+        <path d="M8 12h.001" />
+        <path d="M12 12h.001" />
+        <path d="M16 12h.001" />
+        <path d="M7 16h10" />
+      </IconWrapper>
+    );
+
+    const Sparkles = (props) => (
+      <IconWrapper {...props}>
+        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+      </IconWrapper>
+    );
+
+    const Dna = (props) => (
+      <IconWrapper {...props}>
+        <path d="M2 15c6.667-6 13.333 0 20-6" />
+        <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" />
+        <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" />
+        <path d="m17 6-2.5-2.5" />
+        <path d="m14 8-1-1" />
+        <path d="m7 18 2.5 2.5" />
+        <path d="m3.5 14.5.5.5" />
+        <path d="m20 9 .5.5" />
+        <path d="m6.5 12.5 1 1" />
+        <path d="m16.5 10.5 1 1" />
+        <path d="m10 16 1.5 1.5" />
+      </IconWrapper>
+    );
 
     // --- Biochemically Accurate Break Order ---
     // A-T bonds (2 H-bonds) melt earlier (~60-78°C), G-C bonds (3 H-bonds) melt later (~78-93°C)
-    const generateBreakOrder = (top: (string | null)[]): number[] =>
+    const generateBreakOrder = (top) =>
       Array.from({ length: 16 }, (_, i) => {
         const base = top[i];
         if (base === "G" || base === "C") {
@@ -102,12 +180,12 @@
         return 60 + Math.random() * 18;
       });
 
-    const generateId = (): string => Math.random().toString(36).substring(2, 11);
+    const generateId = () => Math.random().toString(36).substring(2, 11);
 
-    const generateDNA = (): DNASequence => {
+    const generateDNA = () => {
       const BASES = ["A", "T", "G", "C"];
-      const compMap: Record<string, string> = { A: "T", T: "A", G: "C", C: "G" };
-      const getComp = (b: string) => compMap[b] || "A";
+      const compMap = { A: "T", T: "A", G: "C", C: "G" };
+      const getComp = (b) => compMap[b] || "A";
 
       const top = Array.from(
         { length: 16 },
@@ -124,18 +202,12 @@
       return { top, bot, p1, p2, p1Target, p2Target };
     };
 
-    interface BaseProps {
-      char: string | null;
-      sizeClass?: string;
-      animate?: boolean;
-    }
-
-    const Base: React.FC<BaseProps> = ({
+    const Base = ({
       char,
       sizeClass = "w-6 h-8 text-sm",
       animate = false,
     }) => {
-      const colors: Record<string, string> = {
+      const colors = {
         A: "bg-red-500 text-white border-b-2 border-red-700",
         T: "bg-blue-500 text-white border-b-2 border-blue-700",
         G: "bg-emerald-600 text-white border-b-2 border-emerald-800",
@@ -155,14 +227,7 @@
       );
     };
 
-    interface HBondsProps {
-      b1: string | null;
-      b2: string | null;
-      visible: boolean;
-      extraClass?: string;
-    }
-
-    const HBonds: React.FC<HBondsProps> = ({
+    const HBonds = ({
       b1,
       b2,
       visible,
@@ -197,10 +262,8 @@
       );
     };
 
-    const TaqPolymerase: React.FC<{ requiredBase?: string | null }> = ({
-      requiredBase,
-    }) => {
-      const compMap: Record<string, string> = { A: "T", T: "A", G: "C", C: "G" };
+    const TaqPolymerase = ({ requiredBase }) => {
+      const compMap = { A: "T", T: "A", G: "C", C: "G" };
       const targetComplement = requiredBase ? compMap[requiredBase] : null;
 
       return (
@@ -218,15 +281,7 @@
     };
 
     // --- Draggable Primer Component ---
-    interface DraggablePrimerProps {
-      sequence: string[];
-      type: "p1" | "p2";
-      locked: boolean;
-      onLock: () => void;
-      baseSize: string;
-    }
-
-    const DraggablePrimer: React.FC<DraggablePrimerProps> = ({
+    const DraggablePrimer = ({
       sequence,
       type,
       locked,
@@ -235,18 +290,18 @@
     }) => {
       const [pos, setPos] = useState({ x: 0, y: 0 });
       const [isDragging, setIsDragging] = useState(false);
-      const dragRef = useRef<HTMLDivElement>(null);
+      const dragRef = useRef(null);
       const startPos = useRef({ x: 0, y: 0 });
 
-      const handlePointerDown = (e: React.PointerEvent) => {
+      const handlePointerDown = (e) => {
         if (locked) return;
         e.preventDefault();
-        (e.target as Element).setPointerCapture(e.pointerId);
+        e.target.setPointerCapture(e.pointerId);
         setIsDragging(true);
         startPos.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
       };
 
-      const handlePointerMove = (e: React.PointerEvent) => {
+      const handlePointerMove = (e) => {
         if (!isDragging || locked) return;
         setPos({
           x: e.clientX - startPos.current.x,
@@ -254,17 +309,17 @@
         });
       };
 
-      const handlePointerUp = (e: React.PointerEvent) => {
+      const handlePointerUp = (e) => {
         if (!isDragging || locked) return;
         setIsDragging(false);
-        (e.target as Element).releasePointerCapture(e.pointerId);
+        e.target.releasePointerCapture(e.pointerId);
 
         if (dragRef.current) {
           dragRef.current.style.pointerEvents = "none";
           const dropTarget = document.elementFromPoint(e.clientX, e.clientY);
           dragRef.current.style.pointerEvents = "auto";
 
-          const targetZone = dropTarget?.closest(`[data-target="${type}"]`);
+          const targetZone = dropTarget && dropTarget.closest(`[data-target="${type}"]`);
           if (targetZone) {
             onLock();
             setPos({ x: 0, y: 0 });
@@ -310,26 +365,26 @@
     };
 
     function App() {
-      const [dna, setDna] = useState<DNASequence>(() => generateDNA());
+      const [dna, setDna] = useState(() => generateDNA());
 
-      const [cycle, setCycle] = useState<number>(1);
-      const [step, setStep] = useState<number>(0);
-      const [time, setTime] = useState<number>(0);
-      const [isActive, setIsActive] = useState<boolean>(false);
+      const [cycle, setCycle] = useState(1);
+      const [step, setStep] = useState(0);
+      const [time, setTime] = useState(0);
+      const [isActive, setIsActive] = useState(false);
 
-      const [scores, setScores] = useState<Score[]>([]);
-      const [playerName, setPlayerName] = useState<string>("");
-      const [scoreSubmitted, setScoreSubmitted] = useState<boolean>(false);
+      const [scores, setScores] = useState([]);
+      const [playerName, setPlayerName] = useState("");
+      const [scoreSubmitted, setScoreSubmitted] = useState(false);
 
-      const [molecules, setMolecules] = useState<Molecule[]>([]);
-      const [activeStrands, setActiveStrands] = useState<ActiveStrand[]>([]);
-      const [extensions, setExtensions] = useState<Record<string, string[]>>({});
+      const [molecules, setMolecules] = useState([]);
+      const [activeStrands, setActiveStrands] = useState([]);
+      const [extensions, setExtensions] = useState({});
 
-      const [temperature, setTemperature] = useState<number>(25);
-      const [p1Locked, setP1Locked] = useState<boolean>(false);
-      const [p2Locked, setP2Locked] = useState<boolean>(false);
-      const [showAnnealHint, setShowAnnealHint] = useState<boolean>(false);
-      const [errorFlash, setErrorFlash] = useState<boolean>(false);
+      const [temperature, setTemperature] = useState(25);
+      const [p1Locked, setP1Locked] = useState(false);
+      const [p2Locked, setP2Locked] = useState(false);
+      const [showAnnealHint, setShowAnnealHint] = useState(false);
+      const [errorFlash, setErrorFlash] = useState(false);
 
       const isAnnealed = p1Locked && p2Locked;
 
@@ -337,14 +392,14 @@
         try {
           const savedScores = localStorage.getItem("pcr_leaderboard");
           if (savedScores) {
-            setScores(JSON.parse(savedScores) as Score[]);
+            setScores(JSON.parse(savedScores));
           }
         } catch (e) {
           console.error("Could not load scores", e);
         }
       }, []);
 
-      const checkIsExtended = useCallback((): boolean => {
+      const checkIsExtended = useCallback(() => {
         if (activeStrands.length === 0) return false;
         return activeStrands.every((strand) => {
           const ext = extensions[strand.id] || [];
@@ -361,12 +416,12 @@
       const isExtended = checkIsExtended();
 
       const advanceCycle = useCallback(() => {
-        const newMolecules: Molecule[] = [];
+        const newMolecules = [];
 
         activeStrands.forEach((strand) => {
           const ext = extensions[strand.id] || [];
           if (strand.type === "bot") {
-            const newTop = Array<string | null>(16).fill(null);
+            const newTop = Array(16).fill(null);
             for (let i = 0; i < 4; i++) newTop[dna.p1Target + i] = dna.p1[i];
             ext.forEach((b, i) => (newTop[dna.p1Target + 4 + i] = b));
             newMolecules.push({
@@ -376,7 +431,7 @@
               breakOrder: generateBreakOrder(newTop),
             });
           } else {
-            const newBot = Array<string | null>(16).fill(null);
+            const newBot = Array(16).fill(null);
             for (let i = 0; i < 4; i++) newBot[dna.p2Target + i] = dna.p2[i];
             ext.forEach((b, i) => (newBot[dna.p2Target - 1 - i] = b));
             newMolecules.push({
@@ -398,7 +453,7 @@
       }, [activeStrands, extensions, dna]);
 
       useEffect(() => {
-        let timer: ReturnType<typeof setTimeout>;
+        let timer;
         if (step === 2 && isAnnealed) {
           timer = setTimeout(() => setStep(3), 600);
         } else if (step === 3 && isExtended) {
@@ -408,7 +463,7 @@
       }, [step, isAnnealed, isExtended]);
 
       useEffect(() => {
-        let timer: ReturnType<typeof setTimeout>;
+        let timer;
         if (step === 4) {
           timer = setTimeout(() => {
             if (cycle < 3) {
@@ -423,7 +478,7 @@
       }, [step, cycle, advanceCycle]);
 
       useEffect(() => {
-        let interval: ReturnType<typeof setInterval> | undefined;
+        let interval;
         if (isActive && step > 0 && step < 5) {
           interval = setInterval(() => setTime((t) => t + 1), 1000);
         } else {
@@ -445,7 +500,7 @@
 
           if (nextTemp >= 95) {
             setTimeout(() => {
-              const strands: ActiveStrand[] = [];
+              const strands = [];
               molecules.forEach((m) => {
                 strands.push({ id: m.id + "_top", type: "top", seq: m.top });
                 strands.push({ id: m.id + "_bot", type: "bot", seq: m.bot });
@@ -459,11 +514,11 @@
       }, [step, temperature, molecules]);
 
       const handleBaseType = useCallback(
-        (base: string) => {
+        (base) => {
           if (step !== 3 || isExtended) return;
 
           let added = false;
-          const newExts: Record<string, string[]> = { ...extensions };
+          const newExts = { ...extensions };
 
           activeStrands.forEach((strand) => {
             const ext = newExts[strand.id] || [];
@@ -498,10 +553,11 @@
       );
 
       useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
+        const handleKeyDown = (e) => {
           if (
-            document.activeElement?.tagName === "INPUT" ||
-            document.activeElement?.tagName === "TEXTAREA"
+            document.activeElement &&
+            (document.activeElement.tagName === "INPUT" ||
+              document.activeElement.tagName === "TEXTAREA")
           ) {
             return;
           }
@@ -546,7 +602,7 @@
         setScoreSubmitted(false);
       };
 
-      const handleScoreSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+      const handleScoreSubmit = (e) => {
         e.preventDefault();
         if (!playerName.trim()) return;
 
@@ -563,14 +619,14 @@
         setScoreSubmitted(true);
       };
 
-      const formatTime = (seconds: number) => {
+      const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
         return `${m}:${s.toString().padStart(2, "0")}`;
       };
 
       const qualifiesForLeaderboard =
-        scores.length < 5 || time < (scores[scores.length - 1]?.time || Infinity);
+        scores.length < 5 || time < ((scores[scores.length - 1] && scores[scores.length - 1].time) || Infinity);
 
       const baseSize =
         cycle === 3
@@ -600,7 +656,7 @@
             </div>
             <div className="text-center flex-1 min-w-[160px]">
               <h1 className="text-lg sm:text-xl font-black bg-gradient-to-r from-blue-400 via-cyan-300 to-emerald-400 bg-clip-text text-transparent flex items-center justify-center gap-2">
-                <Dna className="text-blue-400 w-5 h-5" />
+                <Dna className="text-blue-400" size={20} />
                 PCR Simulator
               </h1>
               {step > 0 && (
@@ -638,7 +694,7 @@
             {step === 0 && (
               <div className="flex-1 flex flex-col items-center justify-center space-y-6 text-center py-6">
                 <div className="w-20 h-20 sm:w-24 sm:h-24 bg-blue-500/10 border border-blue-500/30 rounded-full flex items-center justify-center mb-1 shadow-[0_0_30px_rgba(59,130,246,0.2)]">
-                  <Play className="text-blue-400 w-10 h-10 sm:w-12 sm:h-12 ml-1.5" />
+                  <Play className="text-blue-400 ml-1.5" size={44} />
                 </div>
                 <h2 className="text-2xl sm:text-4xl font-bold text-white px-4">
                   Amplify the Target DNA
@@ -750,7 +806,7 @@
 
                 <div className="bg-slate-800/90 p-3 sm:p-4 rounded-xl border border-slate-700 shadow-sm mx-1 flex items-center justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <Info className="text-blue-400 shrink-0 mt-0.5 w-5 h-5 sm:w-6 sm:h-6" />
+                    <Info className="text-blue-400 shrink-0 mt-0.5" size={22} />
                     <div>
                       <h3 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
                         <span>
@@ -941,7 +997,7 @@
 
                             {Array.from({ length: 16 }).map((_, i) => {
                               const tBase = strand.seq[i];
-                              let pBase: string | null = null;
+                              let pBase = null;
                               let isExtBase = false;
                               let isTaqTarget = false;
 
@@ -1201,7 +1257,7 @@
 
                       {isExtended ? (
                         <div className="flex flex-col items-center justify-center h-full">
-                          <CheckCircle className="text-emerald-500 mb-2 w-10 h-10" />
+                          <CheckCircle className="text-emerald-500 mb-2" size={40} />
                           <span className="font-bold text-emerald-400">
                             5' → 3' Extension Complete!
                           </span>
@@ -1276,7 +1332,7 @@
             {step === 5 && (
               <div className="flex-1 flex flex-col items-center justify-center space-y-6 text-center py-6">
                 <h2 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
-                  <CheckCircle className="text-emerald-400 w-8 h-8" /> Target
+                  <CheckCircle className="text-emerald-400" size={32} /> Target
                   Amplicon Isolated!
                 </h2>
                 <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
@@ -1409,7 +1465,7 @@
 
     const rootElement = document.getElementById("root");
     if (rootElement) {
-      createRoot(rootElement).render(<App />);
+      ReactDOM.createRoot(rootElement).render(<App />);
     }
   </script>
 </body>
